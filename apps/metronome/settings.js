@@ -38,8 +38,8 @@
     },
     'buzz intensity': {
       value: s.buzzintens,
-      min: 0,
-      max: 2,
+      min: 0.0,
+      max: 1.0,
       step: 0.25,
       onchange: save('buzzintens'),
     },
