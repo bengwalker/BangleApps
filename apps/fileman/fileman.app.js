@@ -7,10 +7,10 @@ var m;
 var files;
 
 function delete_file(fn) {
-  E.showPrompt("Delete\n"+fn+"?", {buttons: {"No":false, "Yes":true}}).then(function(v) {
+  E.showPrompt(/*LANG*/"Delete\n"+fn+"?", {buttons: {/*LANG*/"No":false, /*LANG*/"Yes":true}}).then(function(v) {
     if (v) {
       if (fn.charCodeAt(fn.length-1)==1) {
-        var fh = STOR.open(fn.substr(0, fn.length-1), "w");
+        var fh = STOR.open(fn.substr(0, fn.length-1), "r");
         fh.erase();
       }
       else STOR.erase(fn);
@@ -65,6 +65,30 @@ function visit_file(fn) {
   E.showMenu(menu);
 }
 
+function showFree() {
+  var free = (require("Storage").getFree() / (1024*1024)).toFixed(2) + " MB\n";
+  E.showAlert(free).then( function() { drawMenu(); } );
+}
+
+function jumpTo(v) {
+  nstart = Math.round((v/100)*files.length);
+  if (nstart >= files.length) { nstart = 0; }
+  drawMenu();
+}
+
+function drawUtilMenu() {
+  var menu = {
+    '' : {'title' : "Utils"}
+  };
+  menu['Show free'] = showFree;
+  for (let i=0; i<10; i++) {
+    let v = i*10;
+    menu['Jump to '+v+'%'] = function() { jumpTo(v); };
+  }
+  menu['< Back'] = drawMenu;
+  E.showMenu(menu);
+}
+
 function drawMenu() {
   nend = (nstart+n<files.length)?nstart+n : files.length;
   var menu = {
@@ -75,25 +99,31 @@ function drawMenu() {
     if (nstart<0) nstart = files.length-n>0 ? files.length-n : 0;
     menu = {};
     drawMenu();
-  }
-  for (var i=nstart; i<nend; ++i) {
-    menu[files[i]] = visit_file.bind(null, files[i]);
-  }
+  };
   menu["> next"] = function() {
     if (nstart+n<files.length) nstart += n;
     else nstart = 0;
     menu = {};
     drawMenu();
     m.move(-1);
+  };
+  menu["[utils...]"] = function() {
+    drawUtilMenu();
+  };
+  for (var i=nstart; i<nend; ++i) {
+    menu[files[i]] = visit_file.bind(null, files[i]);
   }
   m = E.showMenu(menu);
 }
 
 function get_pruned_file_list() {
-  var fl = STOR.list(/^[^\.]/);
+  // get storagefile list
+  var sf = STOR.list(/\x01$/).map(s=>s.slice(0,-1));
+  var sffilter = f=>!sf.includes(f.slice(0,-1)) || f.endsWith("\x01");
+  // get files - put '.' last
+  var fl = STOR.list(/^[^\.]/).filter(sffilter);
   fl.sort();
-  fl = fl.concat(STOR.list(/^\./));
-  fl = fl.filter(f => (f.charCodeAt(f.length-1)>31 || f.charCodeAt(f.length-1)<2));
+  fl = fl.concat(STOR.list(/^\./).filter(sffilter).sort());
   return fl;
 }
 

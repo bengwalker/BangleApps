@@ -1,26 +1,25 @@
-var device;
-var gatt;
-var service;
-var characteristic;
-
 const SETTINGS_FILE = 'cscsensor.json';
 const storage = require('Storage');
+const W = g.getWidth();
+const H = g.getHeight();
+const yStart = 48;
+const rowHeight = (H-yStart)/6;
+const yCol1 = W/2.7586;
+const fontSizeLabel = W/12.632;
+const fontSizeValue = W/9.2308;
 
 class CSCSensor {
   constructor() {
     this.movingTime = 0;
     this.lastTime = 0;
-    this.lastBangleTime = Date.now();
     this.lastRevs = -1;
     this.settings = storage.readJSON(SETTINGS_FILE, 1) || {};
     this.settings.totaldist = this.settings.totaldist || 0;
     this.totaldist = this.settings.totaldist;
-    this.wheelCirc = (this.settings.wheelcirc || 2230)/25.4;
     this.speedFailed = 0;
     this.speed = 0;
     this.maxSpeed = 0;
     this.lastSpeed = 0;
-    this.qUpdateScreen = true;
     this.lastRevsStart = -1;
     this.qMetric = !require("locale").speed(1).toString().endsWith("mph");
     this.speedUnit = this.qMetric ? "km/h" : "mph";
@@ -28,6 +27,8 @@ class CSCSensor {
     this.distFactor = this.qMetric ? 1.609344 : 1;
     this.screenInit = true;
     this.batteryLevel = -1;
+    this.showCadence = false;
+    this.cadence = 0;
   }
 
   reset() {
@@ -40,6 +41,12 @@ class CSCSensor {
     this.screenInit = true;
   }
 
+  toggleDisplayCadence() {
+    this.showCadence = !this.showCadence;
+    this.screenInit = true;
+    g.setBgColor(0, 0, 0);
+  }
+
   setBatteryLevel(level) {
     if (level!=this.batteryLevel) {
       this.batteryLevel = level;
@@ -47,26 +54,24 @@ class CSCSensor {
     }
   }
 
-  updateBatteryLevel(event) {
-    if (event.target.uuid == "0x2a19") this.setBatteryLevel(event.target.value.getUint8(0));
-  }
-
   drawBatteryIcon() {
-    g.setColor(1, 1, 1).drawRect(10, 55, 20, 75).fillRect(14, 53, 16, 55).setColor(0).fillRect(11, 56, 19, 74);
+    g.setColor(1, 1, 1).drawRect(10*W/240, yStart+0.029167*H, 20*W/240, yStart+0.1125*H)
+      .fillRect(14*W/240, yStart+0.020833*H, 16*W/240, yStart+0.029167*H)
+      .setColor(0).fillRect(11*W/240, yStart+0.033333*H, 19*W/240, yStart+0.10833*H);
     if (this.batteryLevel!=-1) {
       if (this.batteryLevel<25) g.setColor(1, 0, 0);
       else if (this.batteryLevel<50) g.setColor(1, 0.5, 0);
       else g.setColor(0, 1, 0);
-      g.fillRect(11, 74-18*this.batteryLevel/100, 19, 74);
+      g.fillRect(11*W/240, (yStart+0.10833*H)-18*this.batteryLevel/100, 19*W/240, yStart+0.10833*H);
     }
-    else g.setFontVector(14).setFontAlign(0, 0, 0).setColor(0xffff).drawString("?", 16, 66);
+    else g.setFontVector(W/17.143).setFontAlign(0, 0, 0).setColor(0xffff).drawString("?", 16*W/240, yStart+0.075*H);
   }
 
-  updateScreen() {
-    var dist = this.distFactor*(this.lastRevs-this.lastRevsStart)*this.wheelCirc/63360.0;
+  updateScreenRevs() {
+    var dist = this.distFactor*(this.lastRevs-this.lastRevsStart) * csc.settings.circum/*mm*/ / 1000000;
     var ddist = Math.round(100*dist)/100;
     var tdist = Math.round(this.distFactor*this.totaldist*10)/10;
-    var dspeed = Math.round(10*this.distFactor*this.speed)/10; 
+    var dspeed = Math.round(10*this.distFactor*this.speed)/10;
     var dmins = Math.floor(this.movingTime/60).toString();
     if (dmins.length<2) dmins = "0"+dmins;
     var dsecs = (Math.floor(this.movingTime) % 60).toString();
@@ -77,129 +82,100 @@ class CSCSensor {
       for (var i=0; i<6; ++i) {
         if ((i&1)==0) g.setColor(0, 0, 0);
         else g.setColor(0x30cd);
-        g.fillRect(0, 48+i*32, 86, 48+(i+1)*32);
+        g.fillRect(0, yStart+i*rowHeight, yCol1-1, yStart+(i+1)*rowHeight);
         if ((i&1)==1) g.setColor(0);
         else g.setColor(0x30cd);
-        g.fillRect(87, 48+i*32, 239, 48+(i+1)*32);
-        g.setColor(0.5, 0.5, 0.5).drawRect(87, 48+i*32, 239, 48+(i+1)*32).drawLine(0, 239, 239, 239);//.drawRect(0, 48, 87, 239);
-        g.moveTo(0, 80).lineTo(30, 80).lineTo(30, 48).lineTo(87, 48).lineTo(87, 239).lineTo(0, 239).lineTo(0, 80);
+        g.fillRect(yCol1, yStart+i*rowHeight, H-1, yStart+(i+1)*rowHeight);
+        g.setColor(0.5, 0.5, 0.5).drawRect(yCol1, yStart+i*rowHeight, H-1, yStart+(i+1)*rowHeight).drawLine(0, H-1, W-1, H-1);
+        g.moveTo(0, yStart+0.13333*H).lineTo(30*W/240, yStart+0.13333*H).lineTo(30*W/240, yStart).lineTo(yCol1, yStart).lineTo(yCol1, H-1).lineTo(0, H-1).lineTo(0, yStart+0.13333*H);
       }
-      g.setFontAlign(1, 0, 0).setFontVector(19).setColor(1, 1, 0);
-      g.drawString("Time:", 87, 66);
-      g.drawString("Speed:", 87, 98);
-      g.drawString("Ave spd:", 87, 130);
-      g.drawString("Max spd:", 87, 162);
-      g.drawString("Trip:", 87, 194);
-      g.drawString("Total:", 87, 226);
+      g.setFontAlign(1, 0, 0).setFontVector(fontSizeLabel).setColor(1, 1, 0);
+      g.drawString("Time:", yCol1, yStart+rowHeight/2+0*rowHeight);
+      g.drawString("Speed:", yCol1, yStart+rowHeight/2+1*rowHeight);
+      g.drawString("Avg spd:", yCol1, yStart+rowHeight/2+2*rowHeight);
+      g.drawString("Max spd:", yCol1, yStart+rowHeight/2+3*rowHeight);
+      g.drawString("Trip:", yCol1, yStart+rowHeight/2+4*rowHeight);
+      g.drawString("Total:", yCol1, yStart+rowHeight/2+5*rowHeight);
       this.drawBatteryIcon();
       this.screenInit = false;
     }
-    g.setFontAlign(-1, 0, 0).setFontVector(26);
-    g.setColor(0x30cd).fillRect(88, 49, 238, 79);
-    g.setColor(0xffff).drawString(dmins+":"+dsecs, 92, 66);
-    g.setColor(0).fillRect(88, 81, 238, 111);
-    g.setColor(0xffff).drawString(dspeed+" "+this.speedUnit, 92, 98);
-    g.setColor(0x30cd).fillRect(88, 113, 238, 143);
-    g.setColor(0xffff).drawString(avespeed + " " + this.speedUnit, 92, 130);
-    g.setColor(0).fillRect(88, 145, 238, 175);
-    g.setColor(0xffff).drawString(maxspeed + " " + this.speedUnit, 92, 162);
-    g.setColor(0x30cd).fillRect(88, 177, 238, 207);
-    g.setColor(0xffff).drawString(ddist + " " + this.distUnit, 92, 194);
-    g.setColor(0).fillRect(88, 209, 238, 238);
-    g.setColor(0xffff).drawString(tdist + " " + this.distUnit, 92, 226);
+    g.setFontAlign(-1, 0, 0).setFontVector(fontSizeValue);
+    g.setColor(0x30cd).fillRect(yCol1+1, 49+rowHeight*0, 238, 47+1*rowHeight);
+    g.setColor(0xffff).drawString(dmins+":"+dsecs, yCol1+5, 50+rowHeight/2+0*rowHeight);
+    g.setColor(0).fillRect(yCol1+1, 49+rowHeight*1, 238, 47+2*rowHeight);
+    g.setColor(0xffff).drawString(dspeed+" "+this.speedUnit, yCol1+5, 50+rowHeight/2+1*rowHeight);
+    g.setColor(0x30cd).fillRect(yCol1+1, 49+rowHeight*2, 238, 47+3*rowHeight);
+    g.setColor(0xffff).drawString(avespeed + " " + this.speedUnit, yCol1+5, 50+rowHeight/2+2*rowHeight);
+    g.setColor(0).fillRect(yCol1+1, 49+rowHeight*3, 238, 47+4*rowHeight);
+    g.setColor(0xffff).drawString(maxspeed + " " + this.speedUnit, yCol1+5, 50+rowHeight/2+3*rowHeight);
+    g.setColor(0x30cd).fillRect(yCol1+1, 49+rowHeight*4, 238, 47+5*rowHeight);
+    g.setColor(0xffff).drawString(ddist + " " + this.distUnit, yCol1+5, 50+rowHeight/2+4*rowHeight);
+    g.setColor(0).fillRect(yCol1+1, 49+rowHeight*5, 238, 47+6*rowHeight);
+    g.setColor(0xffff).drawString(tdist + " " + this.distUnit, yCol1+5, 50+rowHeight/2+5*rowHeight);
   }
-  
-  updateSensor(event) {
-    var qChanged = false;
-    if (event.target.uuid == "0x2a5b") {
-      var wheelRevs = event.target.value.getUint32(1, true);
-      var dRevs = (this.lastRevs>0 ? wheelRevs-this.lastRevs : 0);
-      if (dRevs>0) {
-        qChanged = true;
-        this.totaldist += dRevs*this.wheelCirc/63360.0;
-        if ((this.totaldist-this.settings.totaldist)>0.1) {
-          this.settings.totaldist = this.totaldist;
-          storage.writeJSON(SETTINGS_FILE, this.settings);
-        }
+
+  updateScreenCadence() {
+    if (this.screenInit) {
+      for (var i=0; i<2; ++i) {
+        if ((i&1)==0) g.setColor(0, 0, 0);
+        else g.setColor(0x30cd);
+        g.fillRect(0, yStart+i*rowHeight, yCol1-1, yStart+(i+1)*rowHeight);
+        if ((i&1)==1) g.setColor(0);
+        else g.setColor(0x30cd);
+        g.fillRect(yCol1, yStart+i*rowHeight, H-1, yStart+(i+1)*rowHeight);
+        g.setColor(0.5, 0.5, 0.5).drawRect(yCol1, yStart+i*rowHeight, H-1, yStart+(i+1)*rowHeight).drawLine(0, H-1, W-1, H-1);
+        g.moveTo(0, yStart+0.13333*H).lineTo(30*W/240, yStart+0.13333*H).lineTo(30*W/240, yStart).lineTo(yCol1, yStart).lineTo(yCol1, H-1).lineTo(0, H-1).lineTo(0, yStart+0.13333*H);
       }
-      this.lastRevs = wheelRevs;
-      if (this.lastRevsStart<0) this.lastRevsStart = wheelRevs;
-      var wheelTime = event.target.value.getUint16(5, true);
-      var dT = (wheelTime-this.lastTime)/1024;
-      var dBT = (Date.now()-this.lastBangleTime)/1000;
-      this.lastBangleTime = Date.now();
-      if (dT<0) dT+=64;
-      if (Math.abs(dT-dBT)>3) dT = dBT;
-      this.lastTime = wheelTime;
-      this.speed = this.lastSpeed;
-      if (dRevs>0 && dT>0) {
-        this.speed = (dRevs*this.wheelCirc/63360.0)*3600/dT;
-        this.speedFailed = 0;
-        this.movingTime += dT;
-      }
-      else {
-        this.speedFailed++;
-        qChanged = false;
-        if (this.speedFailed>3) {  
-          this.speed = 0;
-          qChanged = (this.lastSpeed>0);
-        }
-      }
-      this.lastSpeed = this.speed;
-      if (this.speed>this.maxSpeed && (this.movingTime>3 || this.speed<20) && this.speed<50) this.maxSpeed = this.speed;
+      g.setFontAlign(1, 0, 0).setFontVector(fontSizeLabel).setColor(1, 1, 0);
+      g.drawString("Cadence:", yCol1, yStart+rowHeight/2+1*rowHeight);
+      this.drawBatteryIcon();
+      this.screenInit = false;
     }
-    if (qChanged && this.qUpdateScreen) this.updateScreen();
+    g.setFontAlign(-1, 0, 0).setFontVector(fontSizeValue);
+    g.setColor(0).fillRect(yCol1+1, 49+rowHeight*1, 238, 47+2*rowHeight);
+    g.setColor(0xffff).drawString(Math.round(this.cadence), yCol1+5, 50+rowHeight/2+1*rowHeight);
   }
+
+  updateScreen() {
+    if (!this.showCadence) {
+      this.updateScreenRevs();
+    } else {
+      this.updateScreenCadence();
+    }
+  }
+
 }
 
 var mySensor = new CSCSensor();
 
-function getSensorBatteryLevel(gatt) {
-  gatt.getPrimaryService("180f").then(function(s) {
-    return s.getCharacteristic("2a19");
-  }).then(function(c) {
-    c.on('characteristicvaluechanged', (event)=>mySensor.updateBatteryLevel(event));
-    return c.startNotifications();
-  });
-}
-
-function parseDevice(d) {
-  device = d;
-  g.clearRect(0, 60, 239, 239).setFontAlign(0, 0, 0).setColor(0, 1, 0).drawString("Found device", 120, 120).flip();
-  device.gatt.connect().then(function(ga) {
-  gatt = ga;
-  g.clearRect(0, 60, 239, 239).setFontAlign(0, 0, 0).setColor(0, 1, 0).drawString("Connected", 120, 120).flip();
-  return gatt.getPrimaryService("1816");
-}).then(function(s) {
-  service = s;
-  return service.getCharacteristic("2a5b");
-}).then(function(c) {
-  characteristic = c;
-  characteristic.on('characteristicvaluechanged', (event)=>mySensor.updateSensor(event));
-  return characteristic.startNotifications();
-}).then(function() {
-  console.log("Done!");
-  g.clearRect(0, 60, 239, 239).setColor(1, 1, 1).flip();
-  getSensorBatteryLevel(gatt);
+var csc = require("blecsc").getInstance();
+csc.on("data", e => {
+  mySensor.totaldist += e.wr * csc.settings.circum/*mm*/ / 1000000; // finally in km
+  mySensor.lastRevs = e.cwr;
+  if (mySensor.lastRevsStart<0) mySensor.lastRevsStart = e.cwr;
+  mySensor.speed = e.kph;
+  mySensor.movingTime += e.wdt;
+  if (mySensor.speed>mySensor.maxSpeed && (mySensor.movingTime>3 || mySensor.speed<20) && mySensor.speed<50)
+    mySensor.maxSpeed = mySensor.speed;
+  mySensor.cadence = e.crps*60;
   mySensor.updateScreen();
-}).catch(function(e) {
-  g.clearRect(0, 60, 239, 239).setColor(1, 0, 0).setFontAlign(0, 0, 0).drawString("ERROR"+e, 120, 120).flip();
-  console.log(e);
-})}
+  mySensor.updateScreen();
+});
 
-function connection_setup() {
-  NRF.setScan();
-  mySensor.screenInit = true;
-  NRF.setScan(parseDevice, { filters: [{services:["1816"]}], timeout: 2000});
-  g.clearRect(0, 48, 239, 239).setFontVector(18).setFontAlign(0, 0, 0).setColor(0, 1, 0);
-  g.drawString("Scanning for CSC sensor...", 120, 120);
-}
-
-connection_setup();
-setWatch(function() { mySensor.reset(); g.clearRect(0, 48, 239, 239); mySensor.updateScreen(); }, BTN1, {repeat:true, debounce:20});
-E.on('kill',()=>{ if (gatt!=undefined) gatt.disconnect(); mySensor.settings.totaldist = mySensor.totaldist; storage.writeJSON(SETTINGS_FILE, mySensor.settings); });
-setWatch(function() { if (Date.now()-mySensor.lastBangleTime>10000) connection_setup(); }, BTN3, {repeat:true, debounce:20});
-NRF.on('disconnect', connection_setup);
+csc.on("status", txt => {
+  //print("->", txt);
+  E.showMessage(txt);
+});
+E.on('kill',()=>{
+  csc.stop();
+  mySensor.settings.totaldist = mySensor.totaldist;
+  storage.writeJSON(SETTINGS_FILE, mySensor.settings);
+});
+Bangle.setUI("updown", d=>{
+  if (d<0) { mySensor.reset(); g.clearRect(0, yStart, W, H); mySensor.updateScreen(); }
+  else if (!d) { mySensor.toggleDisplayCadence(); g.clearRect(0, yStart, W, H); mySensor.updateScreen(); }
+});
 
 Bangle.loadWidgets();
 Bangle.drawWidgets();
+csc.start(); // start a connection

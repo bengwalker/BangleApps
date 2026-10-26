@@ -5,13 +5,13 @@
     '': { 'title': 'Welcome App' },
     'Run next boot': {
       value: !settings.welcomed,
-      format: v => v ? 'Yes' : 'No',
       onchange: v => require('Storage').write('welcome.json', {welcomed: !v}),
     },
     'Run Now': () => load('welcome.app.js'),
     'Turn off & run next': () => {
       require('Storage').write('welcome.json', {welcomed: false});
-      Bangle.off();
+      Bangle.setLocked(true); // fix for pre-2v11 firmware that can accidentally leave touchscreen on
+      if (Bangle.softOff()) Bangle.softOff(); else Bangle.off();
     },
     '< Back': back,
   })

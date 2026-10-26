@@ -78,7 +78,10 @@ Bangle.on('lcdPower', (on) => {
   }
 });
 
+// Show launcher when button pressed
+Bangle.setUI("clock");
+
 Bangle.loadWidgets();
 startDrawing();
 
-setWatch(Bangle.showLauncher, BTN2, { repeat: false, edge: 'falling' });
+

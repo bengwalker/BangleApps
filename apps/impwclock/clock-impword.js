@@ -2,7 +2,7 @@
 A remix of word clock
 by Gordon Williams https://github.com/gfwilliams
 - Changes the representation of time to be more general
-- Shows accurate digital time when button 1 is pressed
+- Toggles showing of accurate digital time when screen touched. 
 */
 /* jshint esversion: 6 */
 
@@ -20,43 +20,44 @@ const allWords = [
 
 const timeOfDay = {
   0: ["", 0, 0],
-  1: ["EARLYMORNING", 10, 20, 30, 40, 50, 02, 12, 22, 32, 42, 52, 62],
-  2: ["MORNING", 02, 12, 22, 32, 42, 52, 62],
-  3: ["LATEMORNING", 01, 11, 21, 31, 02, 12, 22, 32, 42, 52, 62],
+  1: ["EARLYMORNING", 10, 20, 30, 40, 50, 2, 12, 22, 32, 42, 52, 62],
+  2: ["MORNING", 2, 12, 22, 32, 42, 52, 62],
+  3: ["LATEMORNING", 1, 11, 21, 31, 2, 12, 22, 32, 42, 52, 62],
   4: ["MIDDAY", 13, 23, 33, 54, 64, 74],
-  5: ["EARLYAFTERNOON", 10, 20, 30, 40, 50, 04, 14, 24, 34, 44, 70, 71, 72, 73],
-  6: ["AFTERNOON", 04, 14, 24, 34, 44, 70, 71, 72, 73],
-  7: ["LATEAFTERNOON", 01, 11, 21, 31, 04, 14, 24, 34, 44, 70, 71, 72, 73],
-  8: ["EARLYEVENING", 10, 20, 30, 40, 50, 06, 16, 26, 36, 46, 56, 66],
-  9: ["EVENING", 06, 16, 26, 36, 46, 56, 66],
+  5: ["EARLYAFTERNOON", 10, 20, 30, 40, 50, 4, 14, 24, 34, 44, 70, 71, 72, 73],
+  6: ["AFTERNOON", 4, 14, 24, 34, 44, 70, 71, 72, 73],
+  7: ["LATEAFTERNOON", 1, 11, 21, 31, 4, 14, 24, 34, 44, 70, 71, 72, 73],
+  8: ["EARLYEVENING", 10, 20, 30, 40, 50, 6, 16, 26, 36, 46, 56, 66],
+  9: ["EVENING", 6, 16, 26, 36, 46, 56, 66],
   10: ["NIGHT", 37, 47, 57, 67, 77],
-  11: ["MIDDLEOFTHENIGHT", 13, 23, 33, 43, 53, 63, 05, 15, 45, 55, 65, 37,47,57,67,77 ],
+  11: ["MIDDLEOFTHENIGHT", 13, 23, 33, 43, 53, 63, 5, 15, 45, 55, 65, 37,47,57,67,77 ],
 };
 
 
+var big = g.getWidth()>200;
 // offsets and increments
-const xs = 35;
-const ys = 31;
-const dy = 22;
-const dx = 25;
+const xs = big ? 35 : 20;
+const ys = big ? 31 : 28;
+const dx = big ? 25 : 20;
+const dy = big ? 22 : 16;
+
 
 // font size and color
-const fontSize = 3;  // "6x8"
+const fontSize = big ? 3 : 2;  // "6x8"
 const passivColor = 0x3186 /*grey*/ ;
 const activeColorNight = 0xF800 /*red*/ ;
-const activeColorDay = 0xFFFF /* white */;
+const activeColorDay = g.theme.fg;
 
 var hidxPrev;
+var showDigitalTime = false;
 
 function drawWordClock() {
-
-
   // get time
   var t = new Date();
   var h = t.getHours();
   var m = t.getMinutes();
   var time = ("0" + h).substr(-2) + ":" + ("0" + m).substr(-2);
-  var day = t.getDay();
+  //var day = t.getDay();
 
   var hidx;
 
@@ -116,6 +117,8 @@ function drawWordClock() {
 
   // check whether we need to redraw the watchface
   if (hidx !== hidxPrev) {
+    // Turn off showDigitalTime
+    showDigitalTime = false;
     // draw allWords
     var c;
     var y = ys;
@@ -139,18 +142,20 @@ function drawWordClock() {
     hidxPrev = hidx;
   }
 
-  // Display digital time while button 1 is pressed
-  g.clearRect(0, 215, 240, 240);
-  if (BTN1.read()){
+  // Display digital time when button is pressed or screen touched
+  g.clearRect(0, big ? 215 : 160, big ? 240 : 176, big ? 240 : 176);
+  if (showDigitalTime){
     g.setColor(activeColor);
-    g.drawString(time, 120, 215);
+    g.drawString(time, big ? 120 : 90, big ? 215 : 160);
   }
 }
-
 
 Bangle.on('lcdPower', function(on) {
   if (on) drawWordClock();
 });
+
+// Show launcher when button pressed
+Bangle.setUI("clock");
 
 g.clear();
 Bangle.loadWidgets();
@@ -158,8 +163,16 @@ Bangle.drawWidgets();
 setInterval(drawWordClock, 1E4);
 drawWordClock();
 
-// Show digital time while top button is pressed
-setWatch(drawWordClock, BTN1, {repeat:true,edge:"both"});
 
-// Show launcher when middle button pressed
-setWatch(Bangle.showLauncher, BTN2, {repeat:false,edge:"falling"});
+// If LCD pressed, toggle drawing digital time
+Bangle.on('touch',e=>{
+  if (showDigitalTime){
+    showDigitalTime = false;
+    drawWordClock();
+  } else {
+    showDigitalTime = true;
+    drawWordClock();
+  }
+});
+
+

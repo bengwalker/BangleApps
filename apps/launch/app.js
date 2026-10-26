@@ -1,66 +1,88 @@
-var s = require("Storage");
-var apps = s.list(/\.info$/).map(app=>{var a=s.readJSON(app,1);return a&&{name:a.name,type:a.type,icon:a.icon,sortorder:a.sortorder,src:a.src};}).filter(app=>app && (app.type=="app" || app.type=="clock" || !app.type));
-apps.sort((a,b)=>{
-  var n=(0|a.sortorder)-(0|b.sortorder);
-  if (n) return n; // do sortorder first
-  if (a.name<b.name) return -1;
-  if (a.name>b.name) return 1;
-  return 0;
-});
-var selected = 0;
-var menuScroll = 0;
-var menuShowing = false;
+{ // must be inside our own scope here so that when we are unloaded everything disappears
+  let s = require("Storage");
+  // handle customised launcher
+  let settings = Object.assign({
+    showClocks: true,
+    fullscreen: false,
+    height: 52
+  }, s.readJSON("launch.json", true) || {});
+  let font = settings.font;
+  if (!font || font=="Vector"/*compat with old settings*/) {
+    let fonts = g.getFonts();
+    font = fonts.includes("12x20") ? "12x20" : "6x8:2";
+    if (fonts.includes("22")) font="22"; // 2v26+
+  }
+  let height = 0|Math.max(settings.height,12), pad = 2;
+  let imgsize = height-pad*2, imgscale = imgsize/48;
 
-function drawMenu() {
-  g.setFont("6x8",2);
-  g.setFontAlign(-1,0);
-  var n = 3;
-  if (selected>=n+menuScroll) menuScroll = 1+selected-n;
-  if (selected<menuScroll) menuScroll = selected;
-  // arrows
-  g.setColor(menuScroll ? -1 : 0);
-  g.fillPoly([120,6,106,20,134,20]);
-  g.setColor((apps.length>n+menuScroll) ? -1 : 0);
-  g.fillPoly([120,233,106,219,134,219]);
-  // draw
-  g.setColor(-1);
-  for (var i=0;i<n;i++) {
-    var app = apps[i+menuScroll];
-    if (!app) break;
-    var y = 24+i*64;
-    if (i+menuScroll==selected) {
-      g.setColor(0.3,0.3,0.3);
-      g.fillRect(0,y,239,y+63);
-      g.setColor(1,1,1);
-      g.drawRect(0,y,239,y+63);
-    } else
-      g.clearRect(0,y,239,y+63);
-    g.drawString(app.name,64,y+32);
-    var icon=undefined;
-    if (app.icon) icon = s.read(app.icon);
-    if (icon) try {g.drawImage(icon,8,y+8);} catch(e){}
+  // Load widgets if we need to
+  if (!settings.fullscreen) {
+    Bangle.loadWidgets();
+  } else if (global.WIDGETS) {
+    require("widget_utils").hide();
   }
+  { // Draw 'placeholder'
+    let R = Bangle.appRect, mid = height/2, th = g.setFont(font).stringMetrics("X").height/2;
+    g.reset().clearRect(R).setColor("#888");
+    for (var y=R.y;y<R.y2;y+=height) {
+      g.drawRect(pad*2,y+pad*2,imgsize-pad,y+imgsize-pad) // image
+      .drawRect(imgsize+pad*2,y+mid-th,R.y2-R.w/3, y+mid+th); // text
+    }
+    g.flip();
+  }
+
+  let launchCache = require("launch_utils").cache(settings);
+  let apps = launchCache.apps; // get a list of apps to show
+
+  const drawMenu = () => {
+    E.showScroller({
+      h : height, c : apps.length,
+      draw : (i, r, sel) => {
+        var app = apps[i];
+        if (!app) return;
+        g.setBgColor(sel?g.theme.bgH:g.theme.bg).clearRect(r).setFont(font).setFontAlign(-1,0).drawString(app.name,imgsize+pad*2,r.y+2+r.h/2);
+        if (app.icon) {
+          if (!app.img) app.img = s.read(app.icon); // load icon if it wasn't loaded
+          try {g.drawImage(app.img, pad, r.y+pad, {scale: imgscale});} catch(e){}
+        }
+      },
+      select : i => {
+        var app = apps[i];
+        if (!app) return;
+        if (Bangle.haptic) Bangle.haptic("touch");
+        if (!app.src || require("Storage").read(app.src)===undefined) {
+          E.showScroller();
+          E.showMessage(/*LANG*/"App Source\nNot found");
+          setTimeout(drawMenu, 2000);
+        } else {
+          require("launch_utils").loadApp(app);
+        }
+      },
+      back : Bangle.showClock, // button press or tap in top left shows clock now
+      remove : () => {
+        // cleanup the timeout to not leave anything behind after being removed from ram
+        if (lockTimeout) clearTimeout(lockTimeout);
+        Bangle.removeListener("lock", lockHandler);
+        // Restore widgets if they were hidden by fullscreen setting
+        if (global.WIDGETS) require("widget_utils").show();
+      }
+    });
+    g.flip(); // force a render before widgets have finished drawing
+
+    // 10s of inactivity goes back to clock
+    Bangle.setLocked(false); // unlock initially
+    let lockTimeout;
+    let lockHandler = function(locked) {
+      if (lockTimeout) clearTimeout(lockTimeout);
+      lockTimeout = undefined;
+      if (locked)
+        lockTimeout = setTimeout(Bangle.showClock, 10000);
+    };
+    Bangle.on("lock", lockHandler);
+  };
+  // Now apps list is loaded - render
+  drawMenu();
+  // finally draw widgets
+  if (!settings.fullscreen)
+    Bangle.drawWidgets();
 }
-drawMenu();
-setWatch(function() {
-  selected--;
-  if (selected<0) selected = apps.length-1;
-  drawMenu();
-}, BTN1, {repeat:true});
-setWatch(function() {
-  selected++;
-  if (selected>=apps.length) selected = 0;
-  drawMenu();
-}, BTN3, {repeat:true});
-setWatch(function() { // run
-  if (!apps[selected].src) return;
-  if (require("Storage").read(apps[selected].src)===undefined) {
-    E.showMessage("App Source\nNot found");
-    setTimeout(drawMenu, 2000);
-  } else {
-    E.showMessage("Loading...");
-    load(apps[selected].src);
-  }
-}, BTN2, {repeat:true,edge:"falling"});
-Bangle.loadWidgets();
-Bangle.drawWidgets();
